@@ -256,7 +256,7 @@ async function init() {
         vocabSize = vS;
         
         model = buildModel(vocabSize);
-        moodOutput.textContent = 'please wait...';
+        moodOutput.textContent = '';
         loadingIndicator.style.display = 'block';
 
         await trainModel(xs, ys);
