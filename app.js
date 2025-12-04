@@ -236,10 +236,10 @@ async function init() {
         if (vocabJson) {
             vocabulary = JSON.parse(vocabJson);
             vocabSize = Object.keys(vocabulary).length + 1;
-            console.log("TF.js Model and Vocabulary loaded from localStorage.");
+            console.log(" please wait...");
             
             loadingIndicator.style.display = 'none';
-            moodOutput.textContent = 'TF.js Model Loaded. Ready for prediction.';
+            moodOutput.textContent = 'please wait...';
             predictButton.disabled = false;
             predictButton.addEventListener('click', predictMood);
             return;
@@ -256,7 +256,7 @@ async function init() {
         vocabSize = vS;
         
         model = buildModel(vocabSize);
-        moodOutput.textContent = 'Starting TF.js training...';
+        moodOutput.textContent = 'please wait...';
         loadingIndicator.style.display = 'block';
 
         await trainModel(xs, ys);
@@ -265,10 +265,10 @@ async function init() {
         await model.save(`localstorage://${MODEL_SAVE_KEY}`);
         localStorage.setItem(VOCAB_SAVE_KEY, JSON.stringify(vocabulary));
         
-        console.log("TF.js Model and Vocabulary saved to localStorage.");
+        console.log("please wait...");
 
         loadingIndicator.style.display = 'none';
-        moodOutput.textContent = 'Training Complete! TF.js Model Ready.';
+        moodOutput.textContent = 'predicted mood appears here';
         predictButton.disabled = false;
         
         xs.dispose();
