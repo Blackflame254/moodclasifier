@@ -1,6 +1,7 @@
 // --- 1. Dataset and Configuration ---
 
 // All 10 Mood Categories consolidated into a single dataset object.
+// NOTE: The model will be trained on SINGLE WORDS from this dataset to mimic the keyword map.
 const MOOD_DATASET = {
     "Happy / Joy": "happy, joyful, delighted, cheerful, bright, lively, upbeat, thrilled, ecstatic, excited, content, satisfied, playful, grateful, thankful, radiant, positive, optimistic, inspired, energetic, hopeful, amused, blissful, bubbly, confident, serene, vibrant, elated, sunny, glowing, jubilant, refreshed, warm, loving, affectionate, pleased, proud, calm, balanced, harmonious, smiling, laughing, expressive, sparkly, enthusiastic, eager, spirited, triumphant, empowered, motivated, blessed, fortunate, cherished, encouraged, thrilled, fun, merry, jolly, festive, harmonious, peaceful, relieved, cheerfulhearted, uplifted, giddy, exhilarated, golden, animated, appreciative, fulfilled, strong, brightened, affectionate, wholehearted, trusting, lighthearted, carefree, open, safe, rejuvenated, flourishing, dreaming, hopeful, buoyant, merryhearted, livelyhearted, vibranthearted, invigorated, serenehearted, gratefulhearted, comforted, nurtured, soothed, reassured, trustinghearted, supportive, embracing, passionate, imaginative, creative, growing, blooming, blossoming, uplifted-hearted, enriched, enlightened, optimistic-minded, wonder-filled, curious, fascinated, joyful-hearted, spirited-hearted, encouraged-hearted, hope-filled, beaming, shining, glowing-hearted, excited-hearted, thrilled-hearted, positive-minded, cheerful-minded, confident-hearted, free, relaxed, chill, easygoing, inspired-hearted, upbeat-minded, calm-hearted, lively-minded, sunlit, brilliant, dazzling, refreshed-hearted, affectionate-hearted, supportive-hearted",
     "Sad / Low Mood": "sad, unhappy, down, depressed, gloomy, hopeless, lonely, isolated, heartbroken, miserable, discouraged, disappointed, weary, drained, exhausted, sorrowful, grieving, hurt, teary, abandoned, rejected, lost, empty, hollow, fragile, emotional, aching, despairing, pessimistic, withdrawn, numb, cold, blue, melancholic, broken, shattered, downcast, somber, dark, troubled, overwhelmed, stressed, anxious, worried, uneasy, tense, restless, fatigued, drained, apathetic, spiritless, discouraged, faithless, tearful, suffering, burdened, pressured, hopelesshearted, sadhearted, sorrowladen, unloved, unsupported, misunderstood, devalued, belittled, mistreated, insecure, doubtful, fearful, uncertain, shaky, fragilehearted, hurthearted, wounded, scarred, betrayed, abandonedhearted, lonelyhearted, desolate, despair-filled, ashamed, guilty, remorseful, regretful, powerless, helpless, weak, faint, insecurehearted, emptyhearted, hollowhearted, low-spirited, discouraged-hearted, defeated, crushed, rejectedhearted, sorrow-filled, longing, yearning, mourning, achinghearted, unlively, oppressed, suffocated, trapped, overwhelmedhearted, anxioushearted, pressuredhearted, tensehearted, worriedhearted, stressedhearted, insecure-minded, fearful-minded, sad-minded, depressed-minded, hopeless-minded, foggy, cloudy, shadowed, grey-spirited, faded, dim, spiritlesshearted, tearfilled, shaky-hearted, worn, shatteredhearted",
@@ -16,6 +17,13 @@ const MOOD_DATASET = {
 
 
 const MOOD_LABELS = Object.keys(MOOD_DATASET); // 10 mood categories
+const MODEL_SAVE_KEY = 'tfjs-mood-classifier-model';
+const VOCAB_SAVE_KEY = 'tfjs-mood-classifier-vocab';
+const NUM_CLASSES = MOOD_LABELS.length;
+
+let model;
+let vocabulary = {}; // Bag-of-Words vocabulary (word -> index)
+let vocabSize = 0;
 
 // DOM Elements
 const textInput = document.getElementById('text-input');
@@ -25,136 +33,255 @@ const probabilityOutput = document.getElementById('probability-output');
 const loadingIndicator = document.getElementById('loading-indicator');
 const progressBar = document.getElementById('training-progress');
 
-// Global map for quick lookup: word -> mood category
-let keywordToMoodMap = new Map();
 
-
-// --- 2. Keyword Mapping Logic (Replaces Tokenizer/Model Training) ---
+// --- 2. Tokenizer and Data Preparation ---
 
 /**
- * Initializes the keywordToMoodMap for rule-based prediction.
- * Every word in the dataset is mapped to its category.
+ * Creates the vocabulary and training examples where each keyword is mapped
+ * one-to-one to its mood class, forcing the model to act as a look-up map.
+ * @returns {{xs: tf.Tensor, ys: tf.Tensor, vocabSize: number}}
  */
-function createKeywordMap() {
-    console.log("Creating keyword map...");
+function createTrainingData() {
+    console.log("Creating training data and vocabulary...");
+    let allWords = [];
     
-    MOOD_LABELS.forEach(label => {
-        // Split by comma, trim, lowercase, and filter for valid words
-        const words = MOOD_DATASET[label].split(',')
-            .map(w => w.trim().toLowerCase())
-            .filter(w => w.length > 0);
-            
+    // 1. Collect all unique words (tokens)
+    for (const words of Object.values(MOOD_DATASET)) {
+        // Simple tokenizer: split by comma, trim space, convert to lowercase
+        const tokens = words.split(',').map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
+        allWords.push(...tokens);
+    }
+
+    // 2. Build Vocabulary (word -> index)
+    const uniqueWords = [...new Set(allWords)].sort();
+    vocabulary = {};
+    uniqueWords.forEach((word, index) => {
+        vocabulary[word] = index + 1; // Start index at 1
+    });
+    vocabSize = uniqueWords.length + 1;
+
+    // 3. Generate Training Examples (Single Keyword -> One-Hot Vector)
+    const X_train = []; // Input vectors (Bag-of-Words)
+    const Y_train = []; // Output labels (One-Hot Encoding)
+
+    MOOD_LABELS.forEach((label, labelIndex) => {
+        const words = MOOD_DATASET[label].split(',').map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
+        
+        // **KEY CHANGE**: We train on single words only.
         words.forEach(word => {
-            // Map the word to its category. If a word is in multiple categories, 
-            // the last one will overwrite, but since the words are mostly unique 
-            // phrases, this is fine for a basic rule-based system.
-            // For common words, we will prioritize the mood it appears in most often
-            // but for simplicity here, we stick to the primary list mapping.
-            keywordToMoodMap.set(word, label);
+            // BoW vector of size vocabSize where ONLY the keyword token is set to 1
+            const vector = new Array(vocabSize).fill(0);
+            const wordIndex = vocabulary[word];
+            
+            // This guarantees a single word is strongly mapped to one class.
+            if (wordIndex) {
+                vector[wordIndex] = 1; 
+            }
+            X_train.push(vector);
+
+            // One-Hot Label vector
+            const labelVector = new Array(NUM_CLASSES).fill(0);
+            labelVector[labelIndex] = 1;
+            Y_train.push(labelVector);
         });
     });
 
-    console.log(`Keyword Map created with ${keywordToMoodMap.size} unique keywords.`);
+    console.log(`Training Examples: ${X_train.length}`);
+    console.log(`Vocabulary Size: ${vocabSize - 1} unique words`);
+
+    const xs = tf.tensor2d(X_train);
+    const ys = tf.tensor2d(Y_train);
+
+    return { xs, ys, vocabSize };
 }
 
-
-// --- 3. Rule-Based Prediction ---
-
 /**
- * **NEW FUNCTION:** Predicts the mood based on direct keyword matching and scoring.
- * This implements the "go through each word and match" logic.
+ * Converts a text string into a Bag-of-Words tensor for prediction.
+ * This is the scoring mechanism: if a word is present, its index is set to 1.
+ * @param {string} text The user's input text.
+ * @returns {tf.Tensor} A 1xvocabSize tensor.
  */
-function predictMoodRuleBased(text) {
-    // 1. Tokenize the input text (simplified)
+function textToBOW(text) {
     const tokens = text.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-
-    // 2. Initialize score for each mood category
-    const moodScores = new Map();
-    MOOD_LABELS.forEach(label => moodScores.set(label, 0));
-
-    let totalKeywordMatches = 0;
-
-    // 3. Score the sentence based on keyword hits
-    tokens.forEach(token => {
-        const mood = keywordToMoodMap.get(token);
-        if (mood) {
-            // If the token matches a keyword, increment that mood's score
-            moodScores.set(mood, moodScores.get(mood) + 1);
-            totalKeywordMatches++;
-        }
-    });
-
-    // 4. Determine the winner
-    let predictedMood = 'Neutral'; // Default if no keywords match
-    let maxScore = 0;
-
-    moodScores.forEach((score, mood) => {
-        if (score > maxScore) {
-            maxScore = score;
-            predictedMood = mood;
-        }
-    });
+    const vector = new Array(vocabSize).fill(0);
     
-    // 5. Calculate Confidence (Simple proxy: ratio of matching words to total matches)
-    // For a single word like "down", maxScore = 1 and totalKeywordMatches = 1, giving 100%.
-    const confidence = totalKeywordMatches > 0 ? (maxScore / totalKeywordMatches) : 1; 
+    tokens.forEach(token => {
+        const index = vocabulary[token];
+        if (index) {
+            vector[index] = 1; // Mark token as present (this acts as the keyword count)
+        }
+    });
 
-    return { 
-        predictedMood, 
-        confidence 
-    };
+    // Return as a 1xvocabSize tensor
+    return tf.tensor2d([vector]);
 }
 
-
-// --- 4. Prediction and UI Logic (Updated) ---
+// --- 3. Model Definition and Training ---
 
 /**
- * Makes a prediction on the user's text input using the rule-based approach.
+ * Defines a simple Dense Neural Network. The first Dense layer acts as the
+ * scoring/mapping layer between keywords and mood classes.
+ * @param {number} inputShape The size of the vocabulary (input layer size).
+ * @returns {tf.Sequential} The compiled TF.js model.
  */
-function predictMood() {
-    const text = textInput.value.trim(); // Trim whitespace
+function buildModel(inputShape) {
+    const model = tf.sequential();
+    
+    // **KEY CHANGE**: A very simple model is used to prevent complex hidden relationships.
+    // The InputShape is the BoW vector size.
+    // The Output units is the number of classes (10).
+    model.add(tf.layers.dense({
+        inputShape: [inputShape],
+        units: NUM_CLASSES, // Output directly to the class count
+        activation: 'softmax' // Softmax for multi-class classification
+    }));
 
+    model.compile({
+        optimizer: tf.train.adam(0.001), // A small learning rate is safer
+        loss: 'categoricalCrossentropy',
+        metrics: ['accuracy']
+    });
+
+    return model;
+}
+
+/**
+ * Trains the model. We increase epochs significantly to ensure the weights
+ * converge to the exact keyword-to-mood mapping (i.e., high accuracy).
+ * @param {tf.Tensor} xs Input tensor.
+ * @param {tf.Tensor} ys Label tensor.
+ */
+async function trainModel(xs, ys) {
+    const epochs = 200; // Increased epochs for high fidelity keyword mapping
+    await model.fit(xs, ys, {
+        epochs: epochs,
+        shuffle: true,
+        callbacks: {
+            onEpochEnd: (epoch, logs) => {
+                const progress = Math.round((epoch + 1) / epochs * 100);
+                progressBar.value = progress;
+                if (progress >= 100) { 
+                    moodOutput.textContent = 'Training Complete! Model Ready.';
+                } else if (epoch % 20 === 0 || epoch === 0) {
+                     moodOutput.textContent = `Training... Epoch ${epoch + 1}/${epochs} (Loss: ${logs.loss.toFixed(4)})`;
+                }
+            }
+        }
+    });
+}
+
+// --- 4. Prediction and UI Logic ---
+
+/**
+ * Makes a prediction on the user's text input using the TF.js model.
+ */
+async function predictMood() {
+    const text = textInput.value.trim();
+
+    if (!model) {
+        moodOutput.textContent = 'Model is still loading, Please wait.';
+        return;
+    }
+    
     // Validation check for blank input
     if (text.length === 0) {
-        moodOutput.textContent = 'Error: Please enter some text to analyze your mood.';
+        moodOutput.textContent = ' Error: Please enter some text to analyze your mood.';
         probabilityOutput.textContent = '';
         textInput.focus();
         return;
     }
 
-    // Use the rule-based prediction
-    const { predictedMood, confidence } = predictMoodRuleBased(text);
+    // 1. Convert text to input tensor (BoW vector)
+    const inputTensor = textToBOW(text);
 
-    // Update UI
+    // 2. Make prediction
+    const prediction = model.predict(inputTensor);
+
+    // 3. Get probabilities and index of the highest probability
+    const probabilities = await prediction.data();
+    const maxProb = Math.max(...probabilities);
+    const predictedIndex = probabilities.indexOf(maxProb);
+    
+    let predictedMood = 'Neutral'; 
+    let confidence = 0;
+
+    // Only assign mood if probability is above a minimal threshold
+    if (maxProb > 0.1) {
+        predictedMood = MOOD_LABELS[predictedIndex];
+        confidence = maxProb;
+    } else {
+        predictedMood = 'Neutral';
+        confidence = maxProb;
+    }
+
+    // 4. Update UI
     moodOutput.textContent = `"${predictedMood}"`;
     probabilityOutput.textContent = `Confidence: ${(confidence * 100).toFixed(2)}%`;
+    
+    // Clean up tensor memory
+    inputTensor.dispose();
+    prediction.dispose();
 }
 
-
 /**
- * Initializes the application: sets up the keyword map.
+ * Initializes the application: loads model or trains it.
  */
 async function init() {
     predictButton.disabled = true;
-    loadingIndicator.style.display = 'block';
-
-    // 1. Create the keyword map (this replaces model loading/training)
-    createKeywordMap();
-
-    // 2. Hide loading/training indicators (since there's no training)
-    loadingIndicator.style.display = 'none';
-    progressBar.value = 100;
-
-    // 3. UI updates for ready state
-    moodOutput.textContent = 'Model loaded succesfully';
-    predictButton.disabled = false;
     
+    // 1. Try to load model and vocabulary from localStorage
+    try {
+        model = await tf.loadLayersModel(`localstorage://${MODEL_SAVE_KEY}`);
+        const vocabJson = localStorage.getItem(VOCAB_SAVE_KEY);
+        if (vocabJson) {
+            vocabulary = JSON.parse(vocabJson);
+            vocabSize = Object.keys(vocabulary).length + 1;
+            console.log("TF.js Model and Vocabulary loaded from localStorage.");
+            
+            loadingIndicator.style.display = 'none';
+            moodOutput.textContent = 'TF.js Model Loaded. Ready for prediction.';
+            predictButton.disabled = false;
+            predictButton.addEventListener('click', predictMood);
+            return;
+        }
+    } catch (e) {
+        console.log("No model found in localStorage. Starting fresh training.");
+        localStorage.removeItem(MODEL_SAVE_KEY);
+        localStorage.removeItem(VOCAB_SAVE_KEY);
+    }
+    
+    // 2. If no model found, train a new one
+    try {
+        const { xs, ys, vocabSize: vS } = createTrainingData();
+        vocabSize = vS;
+        
+        model = buildModel(vocabSize);
+        moodOutput.textContent = 'Starting TF.js training...';
+        loadingIndicator.style.display = 'block';
+
+        await trainModel(xs, ys);
+
+        // 3. Save model and vocabulary after successful training
+        await model.save(`localstorage://${MODEL_SAVE_KEY}`);
+        localStorage.setItem(VOCAB_SAVE_KEY, JSON.stringify(vocabulary));
+        
+        console.log("TF.js Model and Vocabulary saved to localStorage.");
+
+        loadingIndicator.style.display = 'none';
+        moodOutput.textContent = 'Training Complete! TF.js Model Ready.';
+        predictButton.disabled = false;
+        
+        xs.dispose();
+        ys.dispose();
+
+    } catch (error) {
+        console.error("Training or Initialization Error:", error);
+        moodOutput.textContent = 'ERROR: Training failed. See console.';
+        loadingIndicator.style.display = 'none';
+    }
+
     // 4. Attach event listener
     predictButton.addEventListener('click', predictMood);
-    
-    // Note: Since this is rule-based, the old TensorFlow model/vocabulary storage 
-    // keys (MODEL_SAVE_KEY, VOCAB_SAVE_KEY) and the TF.js library are no longer needed 
-    // for functionality, but they are left in the comments for context.
 }
 
 // Start the application setup
