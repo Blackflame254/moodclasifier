@@ -265,7 +265,7 @@ async function init() {
         await model.save(`localstorage://${MODEL_SAVE_KEY}`);
         localStorage.setItem(VOCAB_SAVE_KEY, JSON.stringify(vocabulary));
         
-        console.log("please wait...");
+        console.log("");
 
         loadingIndicator.style.display = 'none';
         moodOutput.textContent = 'predicted mood appears here';
