@@ -179,7 +179,7 @@ async function predictMood() {
     const text = textInput.value.trim();
 
     if (!model) {
-        moodOutput.textContent = 'Model is still loading, Please wait.';
+        moodOutput.textContent = 'Model is still loading';
         return;
     }
     
