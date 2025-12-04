@@ -236,10 +236,10 @@ async function init() {
         if (vocabJson) {
             vocabulary = JSON.parse(vocabJson);
             vocabSize = Object.keys(vocabulary).length + 1;
-            console.log(" please wait...");
+            console.log(" ");
             
             loadingIndicator.style.display = 'none';
-            moodOutput.textContent = 'please wait...';
+            moodOutput.textContent = '';
             predictButton.disabled = false;
             predictButton.addEventListener('click', predictMood);
             return;
