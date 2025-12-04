@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Mood Classifier</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Browser Mood Classifier  by Augustine</h1>
+        <p>A simple text emotion classifier built with TensorFlow.js, trained entirely in your browser. The model will save locally after the first training. this is my first tensorflow.js model </p>
+
+        <div class="card">
+            <h2>1. Text Input</h2>
+            <textarea id="text-input" placeholder="Type a sentence or paragraph describing your current mood..." rows="6"></textarea>
+            <button id="predict-button" disabled>Predict Mood</button>
+            
+            <div id="loading-indicator">
+                <p>Initial Model Setup </p>
+                <progress id="training-progress" value="0" max="100"></progress>
+            </div>
+        </div>
+
+        <div class="card mood-output-card">
+            <h2>2. Predicted Mood</h2>
+            <div id="mood-output" class="output-box">
+                Model is Loading
+            </div>
+            <div id="probability-output" class="output-box"></div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
