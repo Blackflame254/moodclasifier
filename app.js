@@ -42,7 +42,7 @@ const progressBar = document.getElementById('training-progress');
  * @returns {{xs: tf.Tensor, ys: tf.Tensor, vocabSize: number}}
  */
 function createTrainingData() {
-    console.log("Creating training data and vocabulary...");
+    console.log("please wait model loading...");
     let allWords = [];
     
     // 1. Collect all unique words (tokens)
